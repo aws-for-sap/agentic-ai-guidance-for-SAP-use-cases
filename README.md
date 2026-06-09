@@ -1,11 +1,10 @@
-## My Project
+# Agentic AI Guidance for SAP Use Cases
 
-TODO: Fill this README out!
+Reference workflows that apply agentic AI to SAP development and operations tasks. Each use case is a self-contained folder with its own agents, skills, and README.
 
-Be sure to:
+## Use cases
 
-* Change the title in this README
-* Edit your repository description on GitHub
+- [**Kiro Agents for SAP Clean Core**](clean-core/): assess an ABAP package against SAP's compliance levels A through D, then remediate the findings one object at a time under your transport and your control.
 
 ## Security
 
@@ -13,5 +12,4 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
-
+This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.

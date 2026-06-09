@@ -1,0 +1,52 @@
+{
+  "name": "clean-core-remediator",
+  "description": "Per-object Clean Core remediation in sealed context. Reads findings.json (the work list), runs cascade → probe → apply per finding, pushes source, gates syntax+ATC, rolls back on regression. Writes fix-state inline on each finding and a single per-object result.json. Spawned by the clean-core-fix skill — one remediator instance per ABAP object, parallelizable.",
+  "tools": [
+    "read",
+    "write",
+    "shell",
+    "@builtin"
+  ],
+  "allowedTools": [
+    "read",
+    "@builtin/fs_read"
+  ],
+  "toolsSettings": {
+    "shell": {
+      "allowedCommands": [
+        "abapctl object info *",
+        "abapctl release-state lookup *",
+        "abapctl cds element-info *",
+        "abapctl code element-info *",
+        "abapctl code references *",
+        "abapctl source put *",
+        "abapctl check syntax *",
+        "abapctl check atc *",
+        "abapctl check unit *",
+        "abapctl transport get *",
+        "cd *",
+        "test -f *",
+        "test -d *",
+        "cp *"
+      ],
+      "deniedCommands": [
+        "rm -rf *",
+        "git push *",
+        "abapctl source push *"
+      ],
+      "autoAllowReadonly": true
+    },
+    "write": {
+      "allowedPaths": [
+        "clean-core/**",
+        ".abapctl/.session.json"
+      ]
+    }
+  },
+  "resources": [
+    "file://.abapctl.json",
+    "skill://.kiro/skills/sap-abap/SKILL.md"
+  ],
+  "prompt": "file://./clean-core-remediator.prompt.md",
+  "model": "claude-sonnet-4.5"
+}
