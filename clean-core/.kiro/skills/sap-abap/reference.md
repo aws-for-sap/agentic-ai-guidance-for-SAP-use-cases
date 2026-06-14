@@ -1,4 +1,4 @@
-# abapctl: flag catalog and behaviors
+# abapctl: flag catalog and non-obvious behaviors
 
 Companion to `SKILL.md`. Read this when you need to pick flags or you hit a non-obvious behavior. Every command supports `--json`. Most mutating commands support `--dry-run`. Position arguments are 1-based.
 
@@ -67,11 +67,11 @@ Companion to `SKILL.md`. Read this when you need to pick flags or you hit a non-
 | Command | Flags | Safety |
 |---|---|---|
 | `object info <obj>` | `[--version active\|inactive]` | read-only |
-| `object search <query>` | `[--type T] [--package P] [--max-results N]` | read-only |
-| `object tree <pkg>` | — | read-only |
-| `object path <obj>` | — | read-only |
-| `object types` | — | read-only |
-| `object inactive` | — | read-only |
+| `object search <query>` | `[--type T] [--package P] [--max-results N]` | read-only; **default cap 50**. Exactly-50 results means probably truncated; raise `--max-results` or narrow with `--type`/`--package` |
+| `object tree <pkg>` | none | read-only |
+| `object path <obj>` | none | read-only |
+| `object types` | none | read-only |
+| `object inactive` | none | read-only |
 | `object history <obj>` | `[--include T]` | read-only |
 | `object activate <obj1> <obj2>...` | `[--dry-run]` | mutating, idempotent |
 | `object delete <obj>` | `[--transport NR] [-y] [--dry-run]` | **destructive** |
@@ -82,14 +82,14 @@ Companion to `SKILL.md`. Read this when you need to pick flags or you hit a non-
 |---|---|---|
 | `code definition <obj>` | `--line N --col M` | `[--end-col M] [--implementation] [--include T]` |
 | `code element-info <obj>` | `--line N --col M` | `[--include T]` |
-| `code references <obj>` | — | `[--line N --col M] [--include T]` |
-| `code snippets <obj>` | — | `[--line N --col M] [--include T]` |
+| `code references <obj>` | none | `[--line N --col M] [--include T]` |
+| `code snippets <obj>` | none | `[--line N --col M] [--include T]` |
 | `code complete <obj>` | `--line N --col M` | `[--include T] [--source <path>] [--prefix <text>] [--kind keyword\|method\|type\|all] [--max N]` |
 
 `code complete` notes:
 - Compiler-authoritative: same endpoint Eclipse uses for Ctrl+Space.
 - `--prefix <text>` splices draft text at cursor and lets the server narrow by it. Best AI-agent hallucination guard.
-- `--source <path>` sends a local file as the "current buffer" instead of the SAP-active source, to validate unsaved code.
+- `--source <path>` sends a local file as the "current buffer" instead of the SAP-active source; validates unsaved code.
 - `--kind` filters: `keyword`, `method`, `type`, or `all` (default).
 
 ### refactor (read-only by default)
@@ -101,17 +101,17 @@ Mutating only when an action flag is passed.
 | `refactor quickfix <obj>` | `--line N --col M [--include]` | `+ --apply <index>` |
 | `refactor rename <obj>` | `--line N --col M [--end-col M] [--include]` | `+ --new-name <name> [--transport NR]` |
 | `refactor extract-method <obj>` | `--start-line --start-col --end-line --end-col [--include]` | `+ --name <method> [--transport NR]` |
-| `refactor move <obj1> <obj2>...` | — | `+ --package <target> [--transport NR]` |
+| `refactor move <obj1> <obj2>...` | none | `+ --package <target> [--transport NR]` |
 
 ### source
 
 | Command | Required | Optional | Safety |
 |---|---|---|---|
-| `source get <obj>` | — | `[--include T] [--adt-type PROG/P\|...]` | read-only |
+| `source get <obj>` | none | `[--include T] [--adt-type PROG/P\|...]` | read-only |
 | `source put <obj>` | `--file <path>` | `[--include T] [--adt-type ...] [--transport NR] [--no-activate] [-y] [--dry-run]` | **destructive** |
-| `source push <obj1> <obj2>...` | — | `[--dir <path>] [--transport NR] [--no-activate] [-y] [--dry-run]` | **destructive** |
-| `source format` | (stdin) | — | read-only |
-| `source format-settings` | — | `[--style <s>] [--indentation true\|false]` | read-only with no flags; mutating with flags (system-level) |
+| `source push <obj1> <obj2>...` | none | `[--dir <path>] [--transport NR] [--no-activate] [-y] [--dry-run]` | **destructive** |
+| `source format` | (stdin) | none | read-only |
+| `source format-settings` | none | `[--style <s>] [--indentation true\|false]` | read-only with no flags; mutating with flags (system-level) |
 
 `--include` valid for class methods only: `definitions` \| `implementations` \| `testclasses`.
 
@@ -125,14 +125,14 @@ For PROG / CLAS / FUGR. Three categories: `symbols` (TEXT-001), `selections` (se
 
 | Command | Required | Optional | Safety |
 |---|---|---|---|
-| `text-elements get <obj>` | — | `[--category symbols\|selections\|headings] [--adt-type PROG/P\|CLAS/OC\|FUGR/F]` | read-only |
+| `text-elements get <obj>` | none | `[--category symbols\|selections\|headings] [--adt-type PROG/P\|CLAS/OC\|FUGR/F]` | read-only |
 | `text-elements put <obj>` | `--category K --file <path>` | `[--adt-type T] [--transport NR] [--activate] [--dry-run]` | **destructive** |
 
 **Diverges from `source put`:**
-- `--category` REQUIRED on put (no default, because silent wrong-category writes are too easy).
+- `--category` REQUIRED on put (no default; silent wrong-category writes too easy).
 - `--file` REQUIRED on put.
 - **No auto-activation.** Pass `--activate` only if you actually need to.
-- Lock target is the textelements URI (`/sap/bc/adt/textelements/{programs|classes|functiongroups}/{name}`), NOT the parent. Handled internally (visible in logs).
+- Lock target is the textelements URI (`/sap/bc/adt/textelements/{programs|classes|functiongroups}/{name}`), NOT the parent. Handled internally; visible in logs.
 
 Plaintext format (round-trippable):
 ```
@@ -143,30 +143,48 @@ KEY2=VALUE2
 - selections: 30-char label limit; optional `@DDICReference:NAME`.
 - headings: fixed key set (LISTHEADER, COLUMNHEADER_1..COLUMNHEADER_4).
 
-EC6: `text-elements get` returns empty array (endpoint family genuinely absent; convention, not bug); `text-elements put` returns 404.
+On older/classic stacks: `text-elements get` returns empty array (endpoint family genuinely absent: convention, not bug); `text-elements put` returns 404.
 
 ### data (all read-only)
 
 | Command | Required | Optional |
 |---|---|---|
-| `data query <table>` | — | `[--rows N] [--where <clause>]` |
-| `data cds <view>` | — | `[--rows N]` |
+| `data query <table>` | none | `[--rows N] [--where <clause>]` |
+| `data cds <view>` | none | `[--rows N]` |
 | `data sql` | `--query <sql>` OR `--source <path>` | `[--rows N]` |
+
+`data *` is the **design-time** preview (ADT datapreview). For the runtime consumer's view over the Gateway, use `odata *` below (orthogonal).
+
+### odata (consume OData runtime services, all read-only)
+
+The *consumer's* view over the Gateway (`/sap/opu/odata`, `/sap/opu/odata4`), distinct from `data *` (design-time ADT preview).
+
+| Command | Required | Optional |
+|---|---|---|
+| `odata list` | none | `[-f <search>] [--v2-only\|--v4-only]` |
+| `odata metadata <service>` | none | `[--raw]` |
+| `odata query <service> <entityset>` | none | `[--filter F] [--select S] [--top N] [--skip N] [--orderby O] [--expand E] [--count] [--key "<raw OData key>"]` |
+
+- `odata list`: live V2+V4 catalog. Per-catalog failure → warning (not fatal); both 403/404 → `CAPABILITY_NOT_AVAILABLE` (older stacks).
+- `<service>`: a catalog technical name, or a full `/sap/opu/odata...` path verbatim.
+- `--key` is a single-entity read: allows `--select`/`--expand`, rejects collection-only options.
+- `$filter` syntax is SAP's; the service decides what's filterable. V2/V4 divergence (`$count` / `$search`) handled internally; output normalized to `{rows, count?}`.
+- SAP-aware error hints: 404 catalog → SICF; 404 service → `/IWFND/MAINT_SERVICE`; 403 → SU53 / S_SERVICE; 5xx → `/IWFND/ERROR_LOG` / ST22.
 
 ### check
 
 | Command | Required | Optional | Safety |
 |---|---|---|---|
-| `check syntax <obj>` | — | `[--source <path>]` | read-only |
-| `check cds-syntax <obj>` | — | `[--source <path>]` | read-only |
-| `check atc <obj>` | — | `[-v <variant>]` | read-only |
+| `check syntax <obj>` | none | `[--source <path>]` | read-only |
+| `check cds-syntax <obj>` | none | `[--source <path>]` | read-only |
+| `check atc <obj>` | none | `[-v <variant>]` | read-only |
 | `check atc-quickfix <obj>` | `-v <variant>` | `[--filter any\|automatic\|manual\|pseudo\|ai\|all] [--max-verdicts N]` | read-only |
-| `check unit <obj>` | — | `[--junit]` | read-only |
-| `check atc-variants` | — | — | read-only |
-| `check atc-exempt-proposal <markerId>` | — | — | read-only |
+| `check unit <obj>` | none | `[--junit]` | read-only |
+| `check atc-variants` | none | none | read-only |
+| `check atc-exempt-proposal <markerId>` | none | none | read-only |
 | `check atc-exempt <markerId>` | `--reason FPOS\|OTHR --justification <text>` | `[--approver <user>]` | mutating |
 
-`check atc-quickfix` surfaces metadata `check atc` discards: per-finding documentation URL, fix-availability flags (`manual` / `automatic` / `pseudo` / `ai`), tags. Read-only: no fixes applied.
+`check atc-quickfix` surfaces metadata `check atc` discards: per-finding documentation URL, fix-availability flags (`manual` / `automatic` / `pseudo` / `ai`), tags. Read-only; no fixes applied.
 
 ### transport
 
@@ -177,47 +195,54 @@ EC6: `text-elements get` returns empty array (endpoint family genuinely absent; 
 | `transport list` | `[--user <name>]` | read-only |
 | `transport get <number>` | NR → tasks + objects | read-only |
 | `transport release <number>` | `[-y] [--ignore-locks] [--ignore-atc] [--dry-run]` | **destructive** |
-| `transport delete <number>` | `[-y] [--dry-run]` | **destructive** |
+| `transport delete <number>` | `[-r\|--recursive] [-y] [--dry-run]` | **destructive** |
 
 **Don't confuse:** `info <object>` (object name → reqs) vs `get <NR>` (transport NR → detail).
+
+`transport delete --recursive` (`-r`) first removes the transport's objects (ADT removeobject) so a transport holding a stale lock on a deleted object can be cleaned up. Fail-fast: a failed removeobject aborts before the DELETE. Refuses only a known-released (`status==='R'`) transport.
 
 ### create
 
 All: `create <type> <name> --package <pkg> [--description <text>] [--transport NR] [--dry-run] [-c <conn>]`. Mutating, not idempotent. `--dry-run` for safe preview.
 
-**Standard types** (ABAP/CDS source-bearing) accept `--source <path>` + `--no-activate`:
+**Standard types** (ABAP/CDS source-bearing, accept `--source <path>` + `--no-activate`):
 - `class`, `interface`, `program`, `include`, `function-group`, `ddl-source`, `service-definition`, `access-control`, `metadata-extension`
 
-**XML-bodied DDIC types** accept `--source <path>` for raw XML body + `--no-activate`:
+**CDS-DDL data-definition types** (accept `--source <path>` with `define table`/`define structure` + `--no-activate`):
+- `table` (TABL/DT, capability-gated on older stacks), `structure` (TABL/DS, works broadly)
+
+**XML-bodied DDIC types** (accept `--source <path>` for raw XML body + `--no-activate`):
 - `message-class`, `auth-field`, `auth-object`, `domain`, `data-element`
+
+(18 of 21 types accept `--source`; `class`/`function-group` via repeated multi-include. The 3 without: `service-binding`, `package`, `annotation-definition`.)
 
 **Multi-include** (repeated `--source`, filename suffix dispatches):
 
 `create class`:
-- `{name}.clas.abap` (main)
+- `{name}.clas.abap`: main
 - `{name}.clas.definitions.abap`
 - `{name}.clas.implementations.abap`
 - `{name}.clas.macros.abap`
 - `{name}.clas.testclasses.abap`
 
 `create function-group`:
-- `{name}.fugr.abap` (TOP)
-- `{name}.fugr.{fmname}.func.abap` (function module)
-- `{name}.fugr.{suffix}.reps.abap` (function group include)
+- `{name}.fugr.abap`: TOP
+- `{name}.fugr.{fmname}.func.abap`: function module
+- `{name}.fugr.{suffix}.reps.abap`: function group include
 
 Single-source CLAS convenience: 1 `--source` with non-matching filename → main + warning.
 
-**Typed-flag types** accept typed flags OR `--source` (XOR; mutex error names the conflicting flags):
+**Typed-flag types** (accept typed flags OR `--source`, XOR; mutex error names the conflicting flags):
 
 `create domain`:
 - `--data-type <type>` (CHAR, NUMC, DEC, ...), `--length N`, `--decimals N`
 - `--lowercase`, `--conversion-exit <fn>`
 - `--value-table <name>` (mutually exclusive with `--fixed-value`)
 - `--fixed-value <spec>` repeatable. Spec grammar (explicit empty segments):
-  - `A` (low only)
-  - `1:10:` (low + high)
-  - `A::Active` (low + text)
-  - `1:10:Range` (full)
+  - `A`: low only
+  - `1:10:`: low + high
+  - `A::Active`: low + text
+  - `1:10:Range`: full
 
 `create data-element`:
 - `--type domain | predefinedAbapType` (inferred from `--domain` or `--data-type` if omitted)
@@ -231,19 +256,19 @@ Single-source CLAS convenience: 1 `--source` with non-matching filename → main
 |---|---|
 | `function-module` | `--group <fugr>` |
 | `function-group-include` | `--group <fugr>` |
-| `service-binding` | `--service <srvd>` |
+| `service-binding` | `--service <srvd>` `[--protocol v2\|v4]` (default v2) `[--binding-category ui\|webapi]` (default by protocol; requires `--protocol`). **Auto-activates by default** so the binding is immediately publishable; `--no-activate` leaves it inactive (then `object activate <name>` before `service publish`, else publish fails "does not exist") |
 | `package` | `--description <text>` (required); `[--swcomp <name>] [--transport-layer <name>] [--package-type development\|structure\|main] [--super-package <name>] [--record-changes]` |
 
-**Capability-gated:** DDIC create on EC6. The write capability check is content-type aware (rejects systems advertising the term but only v1+xml dialect). Modern systems (S4H/S4J/A4H) all green.
+**Capability-gated:** DDIC create on older/classic stacks; the write capability check is content-type aware (rejects systems advertising the term but only v1+xml dialect). Modern S/4HANA systems all green.
 
-**Deferred:** `create annotation-definition` is shell-only. Test users get HTTP 403 on all 3 modern systems. Reserved for future authorized testing.
+**Deferred:** `create annotation-definition` is shell-only; test users get HTTP 403 on all 3 modern systems. Reserved for future authorized testing.
 
 ### package
 
 | Command | Flags | Safety |
 |---|---|---|
 | `package list` | `[-p <prefix...>]` | read-only |
-| `package exists <name>` | — | read-only |
+| `package exists <name>` | none | read-only |
 | `package lookup <type>` | `[--filter <pattern>]` | read-only |
 
 `package lookup` types: `transportlayers`, `softwarecomponents`, `applicationcomponents`, `translationrelevances`.
@@ -252,9 +277,9 @@ Single-source CLAS convenience: 1 `--source` with non-matching filename → main
 
 | Command | Flags |
 |---|---|
-| `cds annotations` | — |
+| `cds annotations` | none |
 | `cds element-info <entity>` | `[--follow-associations] [--no-extension-views] [--no-secondary-objects]` |
-| `cds repository-access <entity>` | — |
+| `cds repository-access <entity>` | none |
 | `cds test-dependencies <entity>` | `[--level hierarchy\|unit] [--associations]` |
 
 ### ddic (all read-only)
@@ -263,27 +288,34 @@ Single-source CLAS convenience: 1 `--source` with non-matching filename → main
 
 `table-settings`, `data-element`, `domain`, `table-type`, `lock-object`, `type-group`, `structure`, `view`, `table`
 
-`ddic table` returns parsed DDL fields; not available on EC6.
+`ddic table` returns parsed DDL fields; not available on older/classic stacks.
 
 ### service
 
 | Command | Flags | Safety |
 |---|---|---|
-| `service publish <name>` | `[--version V] [--dry-run]` | mutating, idempotent |
-| `service unpublish <name>` | `[-y] [--version V] [--dry-run]` | **destructive**, idempotent |
+| `service publish <name>` | `[--protocol v2\|v4] [--version V] [--dry-run]` | mutating, idempotent |
+| `service unpublish <name>` | `[--protocol v2\|v4] [-y] [--version V] [--dry-run]` | **destructive**, idempotent |
+| `service binding-details <name>` | none | read-only |
+| `service test <name>` | `[--runtime-url <path>] [--protocol v2\|v4] [--rows N]` | read-only |
+
+`--protocol` routes to the v2/v4 publish endpoint; omitted = auto-detect from the binding's declared version. Distinct from `--version` (= serviceversion).
+
+`service test` resolves a published binding to its runtime URL (`--runtime-url` override → V2 convention → catalog match → V4 convention), fetches `$metadata`, and smoke-queries the first entity set. Verdict `{published, protocol, runtimeUrl, entitySet?, rowCount?, ok, stage?}`. Exit: ok→0, not-published→1, not-found/failure→2. `binding.odataUrl` is an ADT path (406 at runtime); never used for the query; resolution is separate.
 
 ### bdef
 
 | Command | Flags | Safety |
 |---|---|---|
-| `bdef get <name>` | — | read-only |
+| `bdef get <name>` | none | read-only |
 | `bdef create <name>` | `--package P [--description T] [--implementation-type managed\|unmanaged] [--file <path>] [--transport NR] [--dry-run]` | mutating |
+| `bdef listinterfaces <name>` | none | read-only (assigned BO interfaces; usually empty; 404 → `[]` on older stacks) |
 
 ### enho (ECC → S/4HANA migration surface)
 
 | Command | Description | Safety |
 |---|---|---|
-| `enho on <obj>` | List ENHOs active on a base object (decoded ABAP source + position + switch state) | read-only |
+| `enho on <obj>` | List ENHOs active on a base object: decoded ABAP source + position + switch state | read-only |
 | `enho list` | System-wide / package-scoped ENHO inventory | read-only |
 
 `enho on` flags: `[--type <adtType>] [--include T] [--no-decode]`.
@@ -316,7 +348,7 @@ Output shape per case:
 | Concept successor (no concrete class) | 1 entry, `category: 'C'`, `name: ''`, `conceptName: 'XCO Library'` | `→ concept: XCO Library` |
 | Not in catalog | `[]`, `found: false` | `<NAME>: not found` |
 
-Exit 0 for found AND not-found (lookup completed). Exit 2 if system lacks the view (EC6 → `CAPABILITY_NOT_AVAILABLE`).
+Exit 0 for found AND not-found (lookup completed). Exit 2 if system lacks the view (older/classic stacks → `CAPABILITY_NOT_AVAILABLE`).
 
 ### reference
 
@@ -329,9 +361,9 @@ Exit 0 for found AND not-found (lookup completed). Exit 2 if system lacks the vi
 | Command | Target | Flags | Safety |
 |---|---|---|---|
 | `clean-core assess <pkg>` | bare pkg | `[-v <variant>] [--force]` | read-only (writes local reports) |
-| `clean-core report <SID/PKG>` | SID/PKG | — | mutating (local only) |
-| `clean-core executive` | — | `[--sid <sid>]` | mutating (local only) |
-| `clean-core prep <SID/PKG>` | SID/PKG | — | mutating (local only) |
+| `clean-core report <SID/PKG>` | SID/PKG | none | mutating (local only) |
+| `clean-core executive` | none | `[--sid <sid>]` | mutating (local only) |
+| `clean-core prep <SID/PKG>` | SID/PKG | none | mutating (local only) |
 | `clean-core apply <SID/PKG>` | SID/PKG | `[-y] [--object <name>] [--dry-run]` | **destructive** |
 
 `assess` takes a bare pkg because it CREATES the SID directory. `prep` / `apply` / `report` come after, so they take `SID/PKG`.
@@ -342,18 +374,18 @@ Always `<package>` arg = `SID/PACKAGE`, except `init` (bare pkg → SID derived 
 
 | Command | Required | Optional | Safety |
 |---|---|---|---|
-| `workspace init <pkg>` | — | `[--source-dir <name>] [--transport NR] [--filter <pat>] [--type <csv>] [--recursive] [--depth N] [--no-download] [--concurrency N] [--force] [--dry-run]` | mutating |
-| `workspace status [SID/PKG]` | — | — | read-only |
-| `workspace list [SID/PKG]` | — | — | read-only |
-| `workspace pull <SID/PKG> [obj...]` | — | `[--force] [--dry-run]` | mutating, idempotent |
-| `workspace push <SID/PKG> [obj...]` | — | `[--force] [--no-activate] [--transport NR] [-y] [--dry-run]` | **destructive** |
-| `workspace diff <SID/PKG> [obj]` | — | `[--sap] [--name-only]` | read-only |
-| `workspace add <SID/PKG> <obj...>` | — | `[--concurrency N] [--dry-run]` | mutating, idempotent |
-| `workspace remove <SID/PKG> <obj...>` | — | `[--delete] [-y] [--dry-run]` | mutating |
-| `workspace reset <SID/PKG> [obj...]` | — | `[-y] [--sap] [--dry-run]` | **destructive**, idempotent |
-| `workspace refresh <SID/PKG>` | — | `[--recursive] [--depth N] [--filter <pat>] [--type <csv>] [--concurrency N] [--force] [--dry-run]` | mutating |
+| `workspace init <pkg>` | none | `[--source-dir <name>] [--transport NR] [--filter <pat>] [--type <csv>] [--recursive] [--depth N] [--no-download] [--concurrency N] [--force] [--dry-run]` | mutating |
+| `workspace status [SID/PKG]` | none | none | read-only |
+| `workspace list [SID/PKG]` | none | none | read-only |
+| `workspace pull <SID/PKG> [obj...]` | none | `[--force] [--dry-run]` | mutating, idempotent |
+| `workspace push <SID/PKG> [obj...]` | none | `[--force] [--no-activate] [--transport NR] [-y] [--dry-run]` | **destructive** |
+| `workspace diff <SID/PKG> [obj]` | none | `[--sap] [--name-only]` | read-only |
+| `workspace add <SID/PKG> <obj...>` | none | `[--concurrency N] [--dry-run]` | mutating, idempotent |
+| `workspace remove <SID/PKG> <obj...>` | none | `[--delete] [-y] [--dry-run]` | mutating |
+| `workspace reset <SID/PKG> [obj...]` | none | `[-y] [--sap] [--dry-run]` | **destructive**, idempotent |
+| `workspace refresh <SID/PKG>` | none | `[--recursive] [--depth N] [--filter <pat>] [--type <csv>] [--concurrency N] [--force] [--dry-run]` | mutating |
 
-`workspace init --recursive --depth N` warning: at depth >1, sideways package refs explode: a single `--depth 2` run can pull thousands of metadata-only objects. Prefer `--depth 1` per package, or invoke `init` per leaf package.
+`workspace init --recursive --depth N` warning: at depth >1, sideways package refs explode (we've seen 9806 metadata-only objects from one `--depth 2` run). Prefer `--depth 1` per package, or invoke `init` per leaf package.
 
 `workspace push` activation: enabled by default; `--no-activate` skips. `workspace pull` does not write to SAP, only to local disk.
 
@@ -361,7 +393,7 @@ Always `<package>` arg = `SID/PACKAGE`, except `init` (bare pkg → SID derived 
 
 ---
 
-## Behaviors (the things that surprise you)
+## Non-obvious behaviors (the things that consume cycles)
 
 ### Class includes
 - `source get ZCL_FOO` → header only (no method bodies). To get bodies: `source get ZCL_FOO --include implementations`.
@@ -373,11 +405,11 @@ Always `<package>` arg = `SID/PACKAGE`, except `init` (bare pkg → SID derived 
 ### Transport disambiguation
 - `transport info <object>`: object name → requirements + open transports.
 - `transport get <NR>`: transport number → tasks/objects.
-- Mixing them up returns `OBJECT_NOT_FOUND`.
+- Mixing them up returns `OBJECT_NOT_FOUND`, a common cycle-burner.
 
 ### Stale CSRF on persisted session
 - First **write** after the session expires returns 403 Forbidden. Reads still work because they don't need CSRF.
-- Recovery: delete `.abapctl/.session.json` and retry once; abapctl re-logs in transparently.
+- Recovery: delete `.abapctl/.session.json` and retry once. SapClient re-logs in transparently.
 - Looks like an auth bug or SAP outage but is just session staleness.
 
 ### `text-elements put` lock target
@@ -388,12 +420,12 @@ The lock target is the **textelements URI** (`/sap/bc/adt/textelements/{programs
 - `text-elements put` does NOT activate by default. Pass `--activate` to opt in.
 
 ### Capability gating
-- `release-state lookup`: S/4 only (S4H/S4J/A4H). EC6 → `CAPABILITY_NOT_AVAILABLE`.
-- `ddic table`: not available on EC6.
+- `release-state lookup`: modern S/4HANA only. Older/classic stacks → `CAPABILITY_NOT_AVAILABLE`.
+- `ddic table`: not available on older/classic stacks.
 - `create annotation-definition`: shell-only (test users 403).
-- DDIC create: EC6 capability-gated via content-type-aware check.
-- `text-elements get` on EC6: returns empty array (endpoint family absent).
-- Batch activation (`activation/runs`): S4H + A4H only.
+- DDIC create: capability-gated on older/classic stacks via a content-type-aware check.
+- `text-elements get` on older/classic stacks: returns empty array (endpoint family absent).
+- Batch activation (`activation/runs`): modern S/4HANA only.
 
 ### Position semantics
 - `--line` and `--col` are **1-based**, matching ABAP editor. `--line 1 --col 1` = first char.
@@ -443,10 +475,10 @@ abapctl refactor rename ZCL_FOO --line 10 --col 5 \
 abapctl package list -c dev --json
 abapctl clean-core assess ZFINANCE -c dev --json     # creates <SID>/ZFINANCE/
 abapctl clean-core executive --json
-abapctl clean-core prep S4H/ZFINANCE -c dev
+abapctl clean-core prep <SID>/ZFINANCE -c dev
 # fix sources
-abapctl clean-core apply S4H/ZFINANCE -c dev --dry-run --json
-abapctl clean-core apply S4H/ZFINANCE -c dev -y --json
+abapctl clean-core apply <SID>/ZFINANCE -c dev --dry-run --json
+abapctl clean-core apply <SID>/ZFINANCE -c dev -y --json
 ```
 
 ### Multi-include create (CLAS)
@@ -474,10 +506,10 @@ abapctl text-elements put ZPROG --category symbols --file sym.txt \
 
 ```bash
 abapctl workspace init ZFIN -c dev --recursive --depth 1 --json
-abapctl workspace status S4H/ZFIN --json
-abapctl workspace diff S4H/ZFIN --json
-abapctl workspace push S4H/ZFIN -c dev --dry-run --json
-abapctl workspace push S4H/ZFIN -c dev -y --json
+abapctl workspace status <SID>/ZFIN --json
+abapctl workspace diff <SID>/ZFIN --json
+abapctl workspace push <SID>/ZFIN -c dev --dry-run --json
+abapctl workspace push <SID>/ZFIN -c dev -y --json
 ```
 
 ### Runtime verification
@@ -496,7 +528,9 @@ abapctl run --source /tmp/verify.abap -c dev --json
 
 All commands with `--json` return structured JSON to stdout.
 
-**Success patterns:**
+**Success payloads are heterogeneous; do NOT assume a uniform `{ok:true}` envelope.** Each command returns its own shape, and several return a **bare array** (no wrapper object): `object search`, `object types`, `object inactive`, `object history`, `cds annotations`, `package list`, and others. Branch on the command, not on a shared `ok` field. The **error** envelope, by contrast, IS uniform (see below): detect failure by the presence of `error` (and the non-zero exit code), not by the absence of `ok:true`.
+
+**Success patterns** (examples; shapes vary per command):
 
 ```jsonc
 // check atc
@@ -562,6 +596,15 @@ Lives in `.abapctl.json` at project root. Create with `abapctl init` (interactiv
       "username": "DEVELOPER",
       "password_env": "SAP_DEV_PASSWORD",
       "language": "EN"
+    },
+    "prod": {
+      "host": "sap-prod.example.com",
+      "port": 44300,
+      "client": "100",
+      "secure": true,
+      "username": "DEVELOPER",
+      "password_aws_secret": "your-secret-name",
+      "language": "EN"
     }
   },
   "defaults": {
@@ -572,9 +615,13 @@ Lives in `.abapctl.json` at project root. Create with `abapctl init` (interactiv
 }
 ```
 
-`-c <name>` selects the connection; `defaults.connection` is used when omitted. Passwords come from env vars named in `password_env`.
+`-c <name>` selects the connection; `defaults.connection` is used when omitted.
+
+**Password resolution** (precedence): `password_aws_secret` (fetched from AWS Secrets Manager via the `aws` CLI) wins over `password_env` (env var name, default `ABAPCTL_PASSWORD`). Per connection, set one:
+- `password_env`: name of the env var holding the password (e.g. `SAP_DEV_PASSWORD`).
+- `password_aws_secret`: Secrets Manager secret id. The SecretString is used verbatim if plain; if JSON, a single-key object uses that value, and a multi-key object needs `password_aws_key` to pick the field. AWS region/profile/credentials come from the `aws` CLI's own config; a configured-but-failing AWS fetch errors out (never falls back to the env var).
 
 Directory layout:
-- `.abapctl/` (fixed): `reference/` (`sap-api-reference/`, `cc-kb/`), `logs/`, `.session.json`. Like `.git/` (don't put project files here).
+- `.abapctl/` (fixed): `reference/` (`sap-api-reference/`, `cc-kb/`), `logs/`, `.session.json`. Like `.git/`; don't put project files here.
 - `workspace_dir` (`"abap"`): ABAP source at `{SID}/{PACKAGE}/`; manifests at `.manifests/{SID}/{PACKAGE}/`.
 - `clean_core.output_dir` (`"clean-core"`): assessment output at `{SID}/{PACKAGE}/`.

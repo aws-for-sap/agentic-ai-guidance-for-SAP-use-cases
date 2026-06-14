@@ -1,14 +1,15 @@
 ---
 name: sap-abap
-description: "Work with SAP ABAP objects on a live system via the abapctl CLI (headless, scriptable access to SAP's ADT API). Use to read, navigate, assess, refactor, or write ABAP code. Trigger when the user mentions SAP, ABAP, ADT, ATC, abapctl, clean core, transports, CDS, DDIC, RAP/behavior definitions, classes/programs/function groups, packages, ENHO, text-elements, release state, code navigation/completion, refactoring (rename/extract/move), workspace sync, data preview/SQL, ABAP Unit, or service bindings, or asks to inspect, navigate, refactor, run, or modify ABAP code against a live system."
+description: "Bring SAP ABAP development into the agentic era via the abapctl CLI: headless, JSON-first access to SAP's ADT development API and OData runtime services. Use it to read, navigate, assess, refactor, and write ABAP code; run ATC and unit checks; manage transport requests; assess and remediate objects toward Clean Core; and query business data through published OData services the way a Fiori app sees it. Trigger when the user mentions SAP, ABAP, ADT, ATC, clean core, transports, CDS, DDIC, RAP/behavior definitions, classes/programs/function groups, packages, ENHO, text-elements, release state, code navigation/completion, refactoring (rename/extract/move), workspace sync, data preview/SQL, ABAP Unit, OData/Fiori services, or service bindings (publish/test), or when the user asks to inspect, navigate, refactor, run, or modify ABAP code, or query live business data, against a live SAP system."
 argument-hint: "[optional: what you want to do, e.g. 'assess ZFINANCE', 'rename method in ZCL_FOO', 'pull workspace']"
+compatibility: "Requires the abapctl CLI on PATH and a live SAP system with ADT enabled, reachable via a configured connection in .abapctl.json (host/client/credentials); run `abapctl init` to create one. OData features additionally need published Gateway services."
 ---
 
 # Working with SAP ABAP via abapctl
 
-`abapctl` is the CLI you'll use for SAP's ADT REST API. Reach for it whenever you need to read, navigate, assess, refactor, or write ABAP objects on a live SAP system. It handles auth, CSRF, lock/unlock, activation, retries, and session reuse.
+`abapctl` is the CLI you'll use for SAP's ADT development API and its OData runtime services. Reach for it whenever you need to read, navigate, assess, refactor, or write ABAP objects on a live SAP system, or query the business data a published service serves. It handles auth, CSRF, lock/unlock, activation, retries, and session reuse.
 
-This `SKILL.md` is the **mental model + decision aid** (keep it loaded). Companion file **`reference.md`** is the **flag catalog and behaviors** (read it when picking flags). Source of truth: `abapctl --help`, `abapctl <group> --help`, `abapctl tools list --json`.
+This `SKILL.md` is the **mental model + decision aid**: keep it loaded. Companion file **`reference.md`** is the **flag catalog and non-obvious behaviors**: read it when picking flags. Source of truth: `abapctl --help`, `abapctl <group> --help`, `abapctl tools list --json`.
 
 ## Pick the right command (intent → command)
 
@@ -17,10 +18,12 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | Intent | Command | Notes |
 |---|---|---|
 | **Browse / understand** | | |
-| Find an object by name pattern | `object search <pattern>` | wildcards, `--type` filter |
+| Find an object by name pattern | `object search <pattern>` | wildcards, `--type` filter. **Default cap 50** (`--max-results N` to raise). If you get *exactly* 50 back, assume more exist and narrow/raise |
 | What is this object, where does it live | `object info <name>` | metadata + includes |
 | What's in this package | `object tree <pkg>` or `package list` | tree = objects, list = packages |
 | Who depends on this symbol | `code references <obj>` + `code snippets <obj>` | where-used + context |
+| Read a RAP behavior definition | `bdef get <name>` | metadata + source; `bdef listinterfaces <name>` for assigned BO interfaces |
+| CDS annotation defs / entity fields / DDL source / test deps | `cds annotations` / `cds element-info <e>` / `cds repository-access <e>` / `cds test-dependencies <e>` | all read-only |
 | What is at line X col Y | `code element-info <obj> --line N --col M` | type, docs, components |
 | Jump to definition | `code definition <obj> --line N --col M` | navigate target |
 | What can I type here (compiler-authoritative) | `code complete <obj> --line N --col M [--prefix <text>]` | hallucination guard |
@@ -29,8 +32,8 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | **Read source** | | |
 | Class header only | `source get ZCL_FOO` | classes default to header |
 | Class methods | `source get ZCL_FOO --include implementations` | also `definitions`, `testclasses` |
-| Program / interface / FUGR include / DDLS body | `source get <name>` | single source (no `--include`) |
-| Translatable strings (TEXT-001, headings) | `text-elements get <obj> --category symbols\|selections\|headings` | divergent semantics (see below) |
+| Program / interface / FUGR include / DDLS body | `source get <name>` | single source, no `--include` |
+| Translatable strings (TEXT-001, headings) | `text-elements get <obj> --category symbols\|selections\|headings` | divergent semantics, see below |
 | Revision history | `object history <obj>` | |
 | **Run checks** | | |
 | Syntax of the active version | `check syntax <obj>` | |
@@ -39,12 +42,20 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | ATC + per-finding fix metadata | `check atc-quickfix <obj> -v <variant> [--filter automatic\|manual\|pseudo\|ai]` | read-only |
 | ABAP Unit | `check unit <obj>` | `--junit` for CI |
 | CDS DDL syntax | `check cds-syntax <obj>` | |
+| Propose / request an ATC exemption | `check atc-exempt-proposal <markerId>` / `check atc-exempt <markerId> --reason FPOS\|OTHR --justification "..."` | proposal read-only; exempt mutating |
 | **Preview data** | | |
 | One DDIC table | `data query <table> [--rows N] [--where "..."]` | |
 | One CDS view | `data cds <view> [--rows N]` | |
 | Arbitrary SQL | `data sql --query "SELECT ..."` or `--source file.sql` | freestyle |
+| **Consume OData runtime (Gateway, the *consumer's* view, orthogonal to `data`)** | | |
+| List the live OData service catalog | `odata list [-f <search>] [--v2-only\|--v4-only]` | V2+V4; per-catalog failure → warning; both gated → CAPABILITY_NOT_AVAILABLE (older stacks) |
+| Inspect a service (entity sets, keys, props) | `odata metadata <service> [--raw]` | `<service>` = catalog name or full `/sap/opu/odata...` path |
+| Query a published service's data | `odata query <service> <entityset> [--filter --select --top --skip --orderby --expand --count]` or `--key "<raw OData key>"` | the *consumer's* view; `$filter` syntax is SAP's (service decides what's filterable) |
+| Publish / unpublish a service binding | `service publish <name>` / `service unpublish <name>` | `--protocol v2\|v4` (auto-detects from binding when omitted); publish before `service test` |
+| Read a binding (protocol, published state, OData URL) | `service binding-details <name>` | read-only |
+| **Did my publish actually work?** | `service test <binding> [--runtime-url <path>] [--protocol v2\|v4] [--rows N]` | resolve runtime URL → $metadata → smoke-query → PASS/FAIL stage-named verdict |
 | **DDIC deep metadata** | | |
-| Table fields (parsed DDL) | `ddic table <name>` | not S/4 EC6 |
+| Table fields (parsed DDL) | `ddic table <name>` | not on older/classic stacks |
 | Domain / data element / table type / lock object / type group / structure / view / table-settings | `ddic <kind> <name>` | all read-only |
 | **Refactor (read-only by default)** | | |
 | Quick fix list at cursor | `refactor quickfix <obj> --line N --col M` | + `--apply <idx>` to execute |
@@ -59,7 +70,7 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | Translatable strings | `text-elements put <obj> --category X --file ./e.txt --transport NR` | **--category REQUIRED, no auto-activate** |
 | Delete | `object delete <obj> -y --transport NR` | |
 | **Create new object (one-shot)** | `create <type> <name> --package PKG [--transport NR]` | 21 types |
-| Create with body in one call | `create <type> <name> --package PKG --source ./body.abap` | 14 of 21 types accept `--source`; CLAS/FUGR accept *repeated* `--source` for multi-include |
+| Create with body in one call | `create <type> <name> --package PKG --source ./body.abap` | 18 of 21 types accept `--source`; CLAS/FUGR accept *repeated* `--source` for multi-include |
 | Create domain (typed) | `create domain Z_DOM --data-type CHAR --length 10 [--fixed-value A:B:Active]` | typed flags or `--source` (XOR) |
 | Create data element (typed) | `create data-element Z_DTEL --domain Z_DOM --label-short ... --label-long ...` | typed flags or `--source` (XOR) |
 | **Transport** | | |
@@ -68,6 +79,7 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | List my transports | `transport list` | |
 | Detail of a specific transport NR | `transport get <NR>` | **NR → tasks/objects (NOT `info`)** |
 | Release / delete a transport | `transport release <NR> -y` / `transport delete <NR> -y` | destructive |
+| Delete a transport holding a stale lock | `transport delete <NR> --recursive -y` | `-r` strips the transport's objects (ADT removeobject) first, then deletes |
 | **Workspace (git-like)** | | |
 | Clone | `workspace init <pkg> [--recursive --depth N]` | SID baked in from `-c` |
 | Status / diff | `workspace status [SID/PKG]` / `workspace diff <SID/PKG>` | |
@@ -94,11 +106,11 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 1. **Pass `-c <name>`** unless you know `defaults.connection` is what you want.
 2. **Pass `--json`** on every call. JSON → stdout. Progress/colors → stderr. Don't `2>&1` if piping to a JSON parser.
 3. **Persist sessions**: `--session-file .abapctl/.session.json` (or set `defaults.session_file`). Saves seconds per call.
-4. **Probe capability before assuming**: `discover -c <c>` (top level) or `tools coverage -c <c>` (registry vs system). Some endpoints don't exist on every release (EC6 lacks lots; S/4 has more).
+4. **Probe capability before assuming**: `discover -c <c>` (top level) or `tools coverage -c <c>` (registry vs system). Some endpoints don't exist on every release (older/classic stacks expose fewer; modern S/4HANA more).
 
 ## Agent-context note (subagents)
 
-If you're a remediator/applier subagent spawned with sealed context, your cwd may not be the project root. **Before running any `abapctl` command, `cd` to the directory containing `.abapctl.json`.** Connection config resolves from cwd; a wrong cwd reads as "connection not configured" and looks like a SAP outage. If `.abapctl.json` isn't found in any ancestor, abort. Don't guess.
+If you're a fixer/applier subagent spawned with sealed context, your cwd may not be the project root. **Before running any `abapctl` command, `cd` to the directory containing `.abapctl.json`.** Connection config resolves from cwd; a wrong cwd reads as "connection not configured" and looks like a SAP outage. If `.abapctl.json` isn't found in any ancestor, abort; don't guess.
 
 ## Safety model
 
@@ -134,10 +146,10 @@ These are the things that consume cycles when you guess.
 - Valid values per command:
   - `source get/put`: `definitions` | `implementations` | `testclasses`
   - `code *`, `refactor *`, `object history`, `enho on`: above + `main`
-- Other types (PROG, INTF, FUGR/FF, DDLS) ignore `--include`. Single source.
+- Other types (PROG, INTF, FUGR/FF, DDLS) ignore `--include` (single source).
 
 ### Multi-include `create class` and `create function-group`: repeated `--source`
-Filename suffix dispatches to the right slot. Don't pass JSON metadata or wrap the calls. The CLI does it.
+Filename suffix dispatches to the right slot. Don't pass JSON metadata or wrap the calls; the CLI does it.
 
 CLAS slots:
 - `{name}.clas.abap`: main
@@ -157,24 +169,27 @@ Single-source CLAS convenience: one `--source` with non-matching filename → tr
 Some Z names exist as multiple types (e.g. `ZFOO` as both PROG/P and FUGR/FF). Pass `--adt-type PROG/P` (or `CLAS/OC`, `FUGR/FF`, etc.) to disambiguate. Available on `source get`, `source put`, `text-elements get`, `text-elements put`.
 
 ### `text-elements put` diverges from `source put`
-- `--category` is **REQUIRED** (`symbols` | `selections` | `headings`). No default. Silent wrong-category writes too easy.
+- `--category` is **REQUIRED** (`symbols` | `selections` | `headings`). No default; silent wrong-category writes too easy.
 - `--file` REQUIRED.
 - **No auto-activation.** Use `--activate` to opt in. (Probe-confirmed: text-elements don't need activation; this is intentional.)
-- **Lock target is the textelements URI**, not the parent object URI. Handled internally; just don't be surprised if you see `/sap/bc/adt/textelements/programs/...` in logs.
+- **Lock target is the textelements URI**, not the parent object URI; handled internally. Just don't be surprised if you see `/sap/bc/adt/textelements/programs/...` in logs.
 - Plaintext format: `KEY=VALUE` per line. Symbols: 3-char keys; selections: 30-char limit; headings: fixed key set (LISTHEADER, COLUMNHEADER_1..4).
 
-### `create <type> --source <path>` covers 14 of 21 types
-Two channels, hard-coded per command:
-- **source-main** (text/plain → `{root}/source/main`): `program`, `interface`, `include`, `function-module`, `function-group-include`, `ddl-source`, `service-definition`, `access-control`, `metadata-extension`
-- **root-xml** (application/* → root URL): `message-class`, `auth-field`, `auth-object`, `domain`, `data-element`
+### `create <type> --source <path>` covers 18 of 21 types
+Single `--source`, hard-coded channel per command:
+- **source-main** (text/plain → `{root}/source/main`, 9): `program`, `interface`, `include`, `function-module`, `function-group-include`, `ddl-source`, `service-definition`, `access-control`, `metadata-extension`
+- **root-xml** (application/* → root URL, 5): `message-class`, `auth-field`, `auth-object`, `domain`, `data-element`
+- **CDS-DDL** (`define table`/`define structure` → `source/main`, 2): `table` (TABL/DT), `structure` (TABL/DS)
 
-`create class` and `create function-group` use repeated `--source` (multi-include, see above).
+`create class` and `create function-group` use *repeated* `--source` (multi-include, see above) (+2).
 
-`create domain` and `create data-element` accept either typed flags OR `--source` (XOR, mutex error names the conflicting flags).
+The 3 that do NOT accept `--source`: `service-binding` (use `--service`), `package` (metadata only), `annotation-definition` (shell-only, deferred).
+
+`create domain` and `create data-element` accept either typed flags OR `--source` (XOR; mutex error names the conflicting flags).
 
 `function-module` and `function-group-include` require `--group <fugr>`.
 
-`create annotation-definition` is shell-only (deferred, test users get HTTP 403).
+`create annotation-definition` is shell-only (deferred; test users get HTTP 403).
 
 ### Positions are 1-based
 `--line 1 --col 1` = first character of first line. Matches the ABAP editor. Don't zero-index.
@@ -186,8 +201,8 @@ Two channels, hard-coded per command:
 - `workspace list` (no arg) prints `SID/PACKAGE` of every workspace.
 
 ### Stable-source conventions
-- `source format` reads stdin only. Pipe in; don't pass a filename.
-- `source format-settings` is read-only without flags (prints), mutating with `--style`/`--indentation` (writes system-level formatter settings, get user OK).
+- `source format` reads stdin only; pipe in, don't pass a filename.
+- `source format-settings` is read-only without flags (prints), mutating with `--style`/`--indentation` (writes system-level formatter settings; get user OK).
 - Passwords come from env vars named via `password_env`. Auth fail on first call usually means env var not exported in current shell.
 
 ## Common workflows
@@ -220,19 +235,41 @@ abapctl refactor rename ZCL_FOO --line 42 --col 12 \
   --new-name NEW --transport <NR> -c dev --json
 ```
 
+**Publish → verify → consume an OData service** (the loop-closer):
+```bash
+abapctl service publish ZUI_FOO_SB -c dev --json          # make the binding a runtime service
+abapctl service test ZUI_FOO_SB -c dev --json             # PASS: published + resolves + serves data?
+# FAIL: verdict names the stage: resolve (pass --runtime-url) / metadata (MAINT_SERVICE) / query (S_SERVICE, ERROR_LOG)
+abapctl odata query ZUI_FOO_SB Suppliers --top 5 -c dev   # then query the data a real consumer sees
+```
+
+**Build a service from scratch** (CDS view → service → binding → publish → test). CRITICAL ordering:
+```bash
+abapctl create ddl-source ZCC_V --package Z001 --transport <NR> --description "..." --source view.ddls -c dev
+abapctl create service-definition ZCC_SD --package Z001 --transport <NR> --description "..." --source def.srvd -c dev
+abapctl create service-binding ZCC_SB --package Z001 --transport <NR> --description "..." --service ZCC_SD --protocol v2 -c dev
+# create service-binding AUTO-ACTIVATES by default. Only if you passed --no-activate must you run
+# `object activate ZCC_SB` before publish (publish fails "does not exist" against an inactive binding).
+abapctl service publish ZCC_SB -c dev
+abapctl service test ZCC_SB -c dev --json
+# Gotchas (live-proven): create ddl-source/service-definition REQUIRE --description (400 otherwise);
+# the package must be a real dev package, not a structure package (409 "cannot contain development objects");
+# publish needs the underlying CDS view to be OData-exposable or it fails at the SADL layer (CX_SADL_ASSERT), a CDS-modeling issue, not a tooling one.
+```
+
 **Successor lookup for a deprecated API** (live fallback when findings.json enrichment is missing):
 ```bash
 abapctl release-state lookup CL_GUI_ALV_GRID -c dev --json
 # { successors: [{ category: 'O', name: 'CL_SALV_TABLE', ... }], found: true }
 # category 'O' = swap class A for class B
 # category 'C' = use the named concept (e.g. "XCO Library")
-# S/4 only (S4H/S4J/A4H); EC6 returns CAPABILITY_NOT_AVAILABLE
+# modern S/4HANA only; older/classic stacks return CAPABILITY_NOT_AVAILABLE
 ```
 
 **ECC → S/4HANA migration assessment** (ENHO surface):
 ```bash
-abapctl enho list --customer-only --type source-code -c ec6 --json
-abapctl enho on SAPMV45A --type PROG/P -c ec6 --json
+abapctl enho list --customer-only --type source-code -c <conn> --json
+abapctl enho on SAPMV45A --type PROG/P -c <conn> --json
 # Friendly --type: source-code, badi-impl, enhancement, enhancement-spot, badi-spot
 # Default fanout (no --type) covers the 3 ENHO impl types.
 ```
@@ -271,8 +308,8 @@ Object level = worst finding across the object.
 
 | ATC priority | Level | Meaning | Action |
 |---|---|---|---|
-| 0 | A | Clean | — |
-| 3 | B | Info only | — |
+| 0 | A | Clean | none |
+| 3 | B | Info only | none |
 | 2 | C | Warnings | Optional |
 | 1 | D | Errors | **Must fix**: blocks cloud |
 
@@ -282,17 +319,17 @@ Object level = worst finding across the object.
 |---|---|---|
 | 401/403 on first call | Password env var not exported in this shell | Re-export `$SAP_*_PASSWORD`; retry |
 | 403 only on writes (read works) | Stale CSRF in persisted session | Delete `.abapctl/.session.json`; retry once |
-| HTTP 423 / "object is locked" | Someone holds the lock; or `text-elements put` against parent URI | `object info <name> --json` to see holder. Don't force-unlock. Surface to user |
+| HTTP 423 / "object is locked" | Someone holds the lock; or `text-elements put` against parent URI | `object info <name> --json` to see holder. Don't force-unlock; surface to user |
 | `transport info <NR>` returns OBJECT_NOT_FOUND | Wrong verb: `info` takes object name, not transport NR | Use `transport get <NR>` |
 | "capability not available" / 404 on a registered command | Endpoint not on this release | `discover -c <c> --json`; or `tools coverage -c <c> --json` |
 | Recursive `workspace init --depth N` pulled tens of thousands of objects | Sideways package refs explode at depth >1 | Use `init` per leaf package, or `--depth 1` |
 
 ## Don't
 
-- Don't invent command names. Verify with `--help` or `tools list --json`. The CLI evolves.
+- Don't invent command names; verify with `--help` or `tools list --json`. The CLI evolves.
 - Don't pass `-y` silently on destructive commands. Confirm with the user first.
-- Don't hardcode hosts, passwords, transports, or SIDs. Read from config.
-- Don't parse non-JSON stdout with regex. Add `--json` and parse the object.
+- Don't hardcode hosts, passwords, transports, or SIDs; read from config.
+- Don't parse non-JSON stdout with regex; add `--json` and parse the object.
 - Don't zero-index `--line` / `--col`.
-- Don't `2>&1` when piping to `jq`. Progress goes to stderr.
-- Don't pre-flight a transport before a write. `source put` resolves it. (`transport get <NR>` to *check* a known NR is fine; don't *create* one speculatively.)
+- Don't `2>&1` when piping to `jq`; progress goes to stderr.
+- Don't pre-flight a transport before a write; `source put` resolves it. (`transport get <NR>` to *check* a known NR is fine; don't *create* one speculatively.)
