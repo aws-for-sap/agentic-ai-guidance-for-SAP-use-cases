@@ -9,11 +9,29 @@ compatibility: "Requires the abapctl CLI on PATH and a live SAP system with ADT 
 
 `abapctl` is the CLI you'll use for SAP's ADT development API and its OData runtime services. Reach for it whenever you need to read, navigate, assess, refactor, or write ABAP objects on a live SAP system, or query the business data a published service serves. It handles auth, CSRF, lock/unlock, activation, retries, and session reuse.
 
-This `SKILL.md` is the **mental model + decision aid**: keep it loaded. Companion file **`reference.md`** is the **flag catalog and non-obvious behaviors**: read it when picking flags. Source of truth: `abapctl --help`, `abapctl <group> --help`, `abapctl tools list --json`.
+This `SKILL.md` is the **mental model + decision aid**: keep it loaded. Companion file **`reference.md`** is the **flag catalog and non-obvious behaviors**: read it when picking flags.
+
+## First: get the live contract — never assume a command exists
+
+This skill is a *map*, not the territory. The CLI evolves (new command groups, new flags) and this
+file can lag. **Before you act, ground yourself in the live contract on the machine you're running:**
+
+1. **`abapctl tools list --json`** — the authoritative machine-readable contract: every command with
+   its parameters (positional/required/optional), and `readOnly` / `destructive` / `idempotent`
+   annotations. **Run this first** to discover the real command set and to decide safety. Treat the
+   `destructive` flag as binding regardless of what this skill says.
+2. **`abapctl <group> --help`** and **`abapctl <group> <cmd> --help`** — exact flags, choices, and
+   defaults for a specific command, when you need detail beyond the contract.
+3. Only then consult the tables below as a shortcut for *which* command fits an intent.
+
+**Do not invent command names, flags, or values from memory or from this skill alone.** If a command
+or flag isn't in `tools list --json` / `--help` on this system, it does not exist here — adapt, don't
+guess. If `tools list` shows a command this skill doesn't mention, trust `tools list`.
 
 ## Pick the right command (intent → command)
 
-Scan this first. If your intent isn't here, fall back to `abapctl tools list --json`.
+Scan this for the right command, then confirm its flags via `--help` / `tools list --json`. If your
+intent isn't here, `abapctl tools list --json` is the complete set (~126 commands).
 
 | Intent | Command | Notes |
 |---|---|---|
@@ -30,8 +48,8 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | What ENHO is active on this base object | `enho on <obj>` | decoded source + position |
 | Inventory ENHOs in system | `enho list [--customer-only] [--package X]` | migration-risk pile |
 | **Read source** | | |
-| Class header only | `source get ZCL_FOO` | classes default to header |
-| Class methods | `source get ZCL_FOO --include implementations` | also `definitions`, `testclasses` |
+| Whole class incl. method bodies | `source get ZCL_FOO` | **no `--include`** — returns the full global class (DEFINITION + IMPLEMENTATION + all methods) |
+| A class's LOCAL helper include | `source get ZCL_FOO --include implementations` | CCIMP/CCDEF/CCAU — local classes only, NOT the global methods; usually a near-empty stub. See "Class includes" below |
 | Program / interface / FUGR include / DDLS body | `source get <name>` | single source, no `--include` |
 | Translatable strings (TEXT-001, headings) | `text-elements get <obj> --category symbols\|selections\|headings` | divergent semantics, see below |
 | Revision history | `object history <obj>` | |
@@ -39,7 +57,8 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | Syntax of the active version | `check syntax <obj>` | |
 | Syntax of unsaved local file | `check syntax <obj> --source ./edit.abap` | |
 | ATC on one object | `check atc <obj>` | exit 1 = findings |
-| ATC + per-finding fix metadata | `check atc-quickfix <obj> -v <variant> [--filter automatic\|manual\|pseudo\|ai]` | read-only |
+| ATC + per-finding fix metadata | `check atc-inspect <obj> -v <variant> [--filter any\|automatic\|manual\|pseudo\|ai\|all]` | read-only |
+| Apply an ATC finding's quick fix | `check atc-fix <obj> -v <variant> [--apply [index]]` | preview by default; `--apply` writes (**destructive**). For cursor-position fixes use `refactor quickfix` |
 | ABAP Unit | `check unit <obj>` | `--junit` for CI |
 | CDS DDL syntax | `check cds-syntax <obj>` | |
 | Propose / request an ATC exemption | `check atc-exempt-proposal <markerId>` / `check atc-exempt <markerId> --reason FPOS\|OTHR --justification "..."` | proposal read-only; exempt mutating |
@@ -90,6 +109,7 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | **Clean Core** | | |
 | Assess package | `clean-core assess <pkg>` | takes bare pkg; creates SID dir |
 | Prep / apply | `clean-core prep <SID/PKG>` / `clean-core apply <SID/PKG> -y` | take `SID/PKG` |
+| Regenerate a package's SUMMARY.md | `clean-core report <SID/PKG>` | local only, from existing state |
 | Cross-package summary | `clean-core executive` | |
 | **Successor lookup** | | |
 | Is `CL_GUI_ALV_GRID` deprecated? Successor? | `release-state lookup CL_GUI_ALV_GRID` | live CDS view; S/4 only |
@@ -98,8 +118,15 @@ Scan this first. If your intent isn't here, fall back to `abapctl tools list --j
 | Add another connection | `config add-connection <name>` | interactive |
 | What's the active connection | `config show` | |
 | What ADT services does this system expose | `discover` / `tools coverage` | capability probe |
+| SAP system facts (kernel, DB, OS, SID) | `system info` | universal — works on every release incl. classic stacks |
+| Installed software components | `system components [-f <substr>]` | release / support-package / patch level |
 | Run arbitrary ABAP | `run --source ./snippet.abap` | **mutating, treat as code execution** |
 | Health check | `system-check [obj]` | `--connection-only` / `--read` / `--write` |
+| **Operational diagnostics (`monitor`)** | | |
+| ABAP runtime errors (ST22 short dumps) | `monitor dumps [id] [--from <d> --to <d>]` | list, or show one dump by id; read-only |
+| System log (SM21) | `monitor syslog [--from <d> --to <d> --limit N --user U]` | **executes ABAP via classrun**; default window = today |
+| Background jobs (SM37) | `monitor jobs [name] [count] [--status ... --user U --log]` | list/step-detail read-only; `--log` **executes ABAP** |
+| Which monitoring feeds exist | `monitor list-feeds` | read-only capability probe |
 
 ## Always do this
 
@@ -116,9 +143,9 @@ If you're a fixer/applier subagent spawned with sealed context, your cwd may not
 
 | Class | Examples | Default |
 |---|---|---|
-| **read-only** | `object info/search/tree/path/types/inactive/history`, all `code *`, `source get`, all `check *` (except `atc-exempt`), all `data *`, all `ddic *`, all `cds *`, `enho on/list`, `release-state lookup`, `text-elements get`, `workspace status/diff/list`, `transport info/list/get`, `package list/exists/lookup`, `discover`, `tools *` | Run freely |
-| **mutating** | `object activate`, all `create *`, `transport create`, `refactor <x> --<action-flag>`, `service publish`, `workspace init/pull/add/remove/refresh`, `bdef create`, `check atc-exempt`, `run`, `source format-settings --<flag>` | Confirm with user; preview with `--dry-run` if available |
-| **destructive** | `source put/push`, `object delete`, `text-elements put`, `workspace push/reset`, `clean-core apply`, `transport release/delete`, `service unpublish` | **Always confirm.** Pass `-y` only after explicit user OK |
+| **read-only** | `object info/search/tree/path/types/inactive/history`, all `code *`, `source get`, all `check *` (except `atc-exempt`/`atc-fix`), all `data *`, all `ddic *`, all `cds *`, `enho on/list`, `release-state lookup`, `text-elements get`, `workspace status/diff/list`, `transport info/list/get`, `package list/exists/lookup`, `monitor dumps/list-feeds`, `discover`, `tools *` | Run freely |
+| **mutating** | `object activate`, all `create *`, `transport create`, `refactor <x> --<action-flag>`, `service publish`, `workspace init/pull/add/remove/refresh`, `bdef create`, `check atc-exempt`, `run`, `monitor syslog`, `monitor jobs --log`, `clean-core report/executive`, `source format-settings --<flag>` | Confirm with user; preview with `--dry-run` if available. **`monitor syslog` and `monitor jobs --log` execute ABAP via classrun** (read-intent but they run code — treat like `run`) |
+| **destructive** | `source put/push`, `object delete`, `text-elements put`, `check atc-fix --apply`, `workspace push/reset`, `clean-core apply`, `transport release/delete`, `service unpublish` | **Always confirm.** Pass `-y` only after explicit user OK |
 
 Rules:
 
@@ -141,10 +168,24 @@ Rules:
 
 These are the things that consume cycles when you guess.
 
-### Class includes: `--include` is mandatory for method bodies
-- `source get ZCL_FOO` returns header only. To get bodies: `--include implementations`.
+### Class includes: `--include` is for LOCAL classes, NOT the global methods
+**The single most misunderstood flag. Read this before editing any class.**
+
+- `source get ZCL_FOO` **with NO `--include`** returns the **full global class** — `CLASS x
+  DEFINITION … ENDCLASS.` *and* `CLASS x IMPLEMENTATION … ENDCLASS.` with every method body. This is
+  what you edit to change a method. (Verified: no-`--include` reads `…/source/main`.)
+- `--include implementations` (CCIMP) / `--include definitions` (CCDEF) / `--include testclasses`
+  (CCAU) / `--include macros` (CCMAC) address the **local helper** includes — `lcl_*` classes and
+  local types only. On a typical class these are a near-empty comment stub.
+- **To edit a global method: round-trip the full main source (NO `--include`)** — `source get ZCL_FOO`
+  → edit → `source put ZCL_FOO --file …` (no `--include`).
+- **Footgun (breaks activation):** writing the global `CLASS x IMPLEMENTATION` block into
+  `--include implementations` creates a *duplicate* `IMPLEMENTATION` → activation fails with
+  `"CLASS … IMPLEMENTATION" may only occur once`, and the bad include **persists**, so even a later
+  correct main push keeps failing until the include is cleared back to its stub. Only use
+  `--include` when the file genuinely contains *local* helper classes.
 - Valid values per command:
-  - `source get/put`: `definitions` | `implementations` | `testclasses`
+  - `source get/put`: `definitions` | `implementations` | `testclasses` (+ `macros`)
   - `code *`, `refactor *`, `object history`, `enho on`: above + `main`
 - Other types (PROG, INTF, FUGR/FF, DDLS) ignore `--include` (single source).
 
@@ -219,11 +260,12 @@ abapctl code snippets ZCL_FOO -c dev --json
 
 **Source round-trip (download → edit locally → check → upload → verify):**
 ```bash
-abapctl source get ZCL_FOO --include implementations -c dev > impl.abap
-# edit impl.abap
-abapctl check syntax ZCL_FOO --source impl.abap -c dev --json
-abapctl source put ZCL_FOO --file impl.abap --include implementations \
-  --transport <NR> -c dev -y --json
+# NO --include: gets/puts the whole global class incl. method bodies. This is the
+# normal way to edit a class method. Only add --include for LOCAL helper classes.
+abapctl source get ZCL_FOO -c dev > zcl_foo.clas.abap
+# edit zcl_foo.clas.abap
+abapctl check syntax ZCL_FOO --source zcl_foo.clas.abap -c dev --json
+abapctl source put ZCL_FOO --file zcl_foo.clas.abap --transport <NR> -c dev -y --json
 abapctl check atc ZCL_FOO -c dev --json
 ```
 
@@ -269,9 +311,9 @@ abapctl release-state lookup CL_GUI_ALV_GRID -c dev --json
 **ECC → S/4HANA migration assessment** (ENHO surface):
 ```bash
 abapctl enho list --customer-only --type source-code -c <conn> --json
-abapctl enho on SAPMV45A --type PROG/P -c <conn> --json
-# Friendly --type: source-code, badi-impl, enhancement, enhancement-spot, badi-spot
-# Default fanout (no --type) covers the 3 ENHO impl types.
+abapctl enho on SAPMV45A --adt-type PROG/P -c <conn> --json
+# enho list  --type:     source-code, badi-impl, enhancement, enhancement-spot, badi-spot (default fanout = 3 impl types)
+# enho on    --adt-type: PROG/P, CLAS/OC, FUGR/F (auto-discovered if omitted) — NOT --type
 ```
 
 **Clean core assessment:**
@@ -326,7 +368,7 @@ Object level = worst finding across the object.
 
 ## Don't
 
-- Don't invent command names; verify with `--help` or `tools list --json`. The CLI evolves.
+- Don't invent command names, flags, or enum values; verify against `tools list --json` (the contract) or `--help`. The CLI evolves and this skill can lag — the live contract wins.
 - Don't pass `-y` silently on destructive commands. Confirm with the user first.
 - Don't hardcode hosts, passwords, transports, or SIDs; read from config.
 - Don't parse non-JSON stdout with regex; add `--json` and parse the object.

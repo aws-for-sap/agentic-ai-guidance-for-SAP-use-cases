@@ -178,13 +178,34 @@ The *consumer's* view over the Gateway (`/sap/opu/odata`, `/sap/opu/odata4`), di
 | `check syntax <obj>` | none | `[--source <path>]` | read-only |
 | `check cds-syntax <obj>` | none | `[--source <path>]` | read-only |
 | `check atc <obj>` | none | `[-v <variant>]` | read-only |
-| `check atc-quickfix <obj>` | `-v <variant>` | `[--filter any\|automatic\|manual\|pseudo\|ai\|all] [--max-verdicts N]` | read-only |
+| `check atc-inspect <obj>` | `-v <variant>` | `[--filter any\|automatic\|manual\|pseudo\|ai\|all] [--max-verdicts N]` | read-only |
+| `check atc-fix <obj>` | `-v <variant>` | `[--apply [index]] [--no-activate] [--transport NR] [--max-verdicts N] [--dry-run]` | preview default; `--apply` is **destructive** |
 | `check unit <obj>` | none | `[--junit]` | read-only |
 | `check atc-variants` | none | none | read-only |
 | `check atc-exempt-proposal <markerId>` | none | none | read-only |
 | `check atc-exempt <markerId>` | `--reason FPOS\|OTHR --justification <text>` | `[--approver <user>]` | mutating |
 
-`check atc-quickfix` surfaces metadata `check atc` discards: per-finding documentation URL, fix-availability flags (`manual` / `automatic` / `pseudo` / `ai`), tags. Read-only; no fixes applied.
+`check atc-inspect` surfaces metadata `check atc` discards: per-finding documentation URL, fix-availability flags (`manual` / `automatic` / `pseudo` / `ai`), tags. Read-only; no fixes applied. `check atc-fix` is the *apply* counterpart — preview by default, `--apply [index]` writes (bare `--apply` = all non-conflicting fixes, `--apply N` = only the Nth). For cursor-position fixes use `refactor quickfix` instead. `--all` (bulk auto-quickfix across the worklist) is not yet implemented.
+
+### system (SAP system facts)
+
+| Command | Optional | Safety |
+|---|---|---|
+| `system info` | none | read-only |
+| `system components` | `[-f\|--filter <substr>]` | read-only |
+
+`system info` → kernel release/PL, DB system/release/schema, OS, app server, derived SID, unicode. `system components` → installed software components (release / support package / patch level / description); `-f` is a case-insensitive substring over name+description. Both are **universal** (work on every release incl. classic stacks); no capability gate. CRITICAL: `system info`'s `sapSystemId` is the kernel system *number*, not the SID — the real SID is best-effort `derivedSid` from the app-server name.
+
+### monitor (operational diagnostics)
+
+| Command | Required | Optional | Safety |
+|---|---|---|---|
+| `monitor list-feeds` | none | none | read-only (capability probe) |
+| `monitor dumps [id]` | none | `[--from <date>] [--to <date>]` | read-only |
+| `monitor syslog` | none | `[--from <date>] [--to <date>] [--limit N] [--user <name>]` | **executes ABAP via classrun** (read-intent, but runs code) |
+| `monitor jobs [jobname] [jobcount]` | none | `[--name <pat>] [--user <u>] [--status failed\|finished\|running\|scheduled\|ready] [--from <date>] [--to <date>] [--limit N] [--log]` | list/step-detail read-only (data sql); `--log` **executes ABAP via classrun** |
+
+ST22 short dumps / SM21 system log / SM37 background jobs. `dumps`/`jobs` list-and-detail are read-only (data sql); `syslog` and `jobs --log` run ABAP via classrun, so treat them like `run`. Dates accept ISO (`2026-06-29`) or SAP (`YYYYMMDD[HHMMSS]`). `syslog`/`jobs` default window is **today in the client timezone** — pass `--from/--to` explicitly if the SAP system is in another timezone. `<jobcount>` is SAP's 8-char run id, taken from the list output.
 
 ### transport
 
@@ -318,7 +339,8 @@ Single-source CLAS convenience: 1 `--source` with non-matching filename → main
 | `enho on <obj>` | List ENHOs active on a base object: decoded ABAP source + position + switch state | read-only |
 | `enho list` | System-wide / package-scoped ENHO inventory | read-only |
 
-`enho on` flags: `[--type <adtType>] [--include T] [--no-decode]`.
+`enho on` flags: `[--adt-type <adtType>] [--include T] [--no-decode]`.
+- `--adt-type` (e.g. `PROG/P`, `CLAS/OC`, `FUGR/F`) — auto-discovered if omitted. NOT `--type` (that's the `enho list` flag).
 - `--include` valid only for CLAS/OC.
 - `--no-decode` keeps base64.
 
@@ -395,10 +417,12 @@ Always `<package>` arg = `SID/PACKAGE`, except `init` (bare pkg → SID derived 
 
 ## Non-obvious behaviors (the things that consume cycles)
 
-### Class includes
-- `source get ZCL_FOO` → header only (no method bodies). To get bodies: `source get ZCL_FOO --include implementations`.
+### Class includes — `--include` is for LOCAL classes, NOT the global methods
+- `source get ZCL_FOO` **with NO `--include`** → the **full global class**: `CLASS x DEFINITION … ENDCLASS.` *and* `CLASS x IMPLEMENTATION … ENDCLASS.` with every method body (reads `…/source/main`). **This is what you edit to change a method.**
+- `--include implementations` (CCIMP) / `definitions` (CCDEF) / `testclasses` (CCAU) / `macros` (CCMAC) → the **local helper** include only (`lcl_*` classes, local types). On a typical class this is a near-empty comment stub, **not** the global methods.
+- **Footgun:** PUTting the global `CLASS x IMPLEMENTATION` block via `--include implementations` creates a duplicate → activation fails `"CLASS … IMPLEMENTATION" may only occur once`, and the poisoned include **persists** (later correct main pushes keep failing until it's cleared back to its stub). To edit a global method, round-trip the **full main source** (no `--include`). Use `--include` only when the file really contains local helper classes. (Full analysis: `docs/source-put-include-ccimp-probe-2026-06-29.md`.)
 - `--include` valid values per command:
-  - `source get/put`: `definitions` \| `implementations` \| `testclasses`
+  - `source get/put`: `definitions` \| `implementations` \| `testclasses` (+ `macros`)
   - `code *`, `refactor *`, `object history`, `enho on`: above + `main`
 - Other types (PROG, INTF, FUGR/FF, DDLS) ignore `--include` (single source).
 
@@ -451,12 +475,13 @@ abapctl code snippets ZCL_FOO -c dev --json
 ### Source round-trip
 
 ```bash
-abapctl source get ZCL_FOO --include implementations -c dev > impl.abap
+# NO --include: full global class incl. method bodies. The normal way to edit a class.
+abapctl source get ZCL_FOO -c dev > zcl_foo.clas.abap
 # edit
-abapctl check syntax ZCL_FOO --source impl.abap -c dev --json
-abapctl source put ZCL_FOO --file impl.abap --include implementations \
-  --transport <NR> -c dev -y --json
+abapctl check syntax ZCL_FOO --source zcl_foo.clas.abap -c dev --json
+abapctl source put ZCL_FOO --file zcl_foo.clas.abap --transport <NR> -c dev -y --json
 abapctl check atc ZCL_FOO -c dev --json
+# Add --include only to edit LOCAL helper classes (CCIMP/CCDEF/CCAU), never the global methods.
 ```
 
 ### Safe refactoring
